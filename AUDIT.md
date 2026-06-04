@@ -153,3 +153,7 @@
 12. **Weak JWT Secret Example** (.env.example)
     - Example secret is weak
     - Should recommend strong secrets
+
+
+
+This is the whole process in the assignment and we complete it with all the provide thinks
