@@ -1,3 +1,5 @@
+// SMELL: [MEDIUM]
+// var usage should be replaced with const/let.
 require('dotenv').config();
 var express = require('express');
 var mongoose = require('mongoose');
@@ -21,6 +23,9 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // database connection
 var mongoUrl = process.env.DATABASE_URL || 'mongodb://localhost:27017/logitrack';
+// SMELL: [MEDIUM]
+// Deprecated mongoose options - useCreateIndex and useFindAndModify are deprecated.
+// Remove these options as they are no longer needed in Mongoose 6+.
 mongoose.connect(mongoUrl, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -43,8 +48,12 @@ app.get('/', function(req, res) {
     res.json({ message: 'LogiTrack Backend running' });
 });
 
+// SMELL: [MEDIUM]
+// No 404 handler - should add catch-all route for proper 404 responses.
 // no 404 handler here, let express handle it for now
 
+// SMELL: [MEDIUM]
+// var usage should be replaced with const.
 // start server
 var PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {

@@ -1,3 +1,5 @@
+// SMELL: [MEDIUM]
+// var usage should be replaced with const.
 var mongoose = require('mongoose');
 
 var shipmentSchema = new mongoose.Schema({
@@ -16,7 +18,9 @@ var shipmentSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        default: 'pending' // pending, in-progress, delivered, cancelled
+        default: 'pending' // SMELL: [MEDIUM]
+// Magic string should be a constant.
+// pending, in-progress, delivered, cancelled
     },
     weight: {
         type: Number,

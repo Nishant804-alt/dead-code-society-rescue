@@ -1,16 +1,25 @@
-var express = require('express');
-var router = express.Router();
-var User = require('../models/User'); // user model
-var Shipment = require('../models/Shipment'); // shipment model
-var jwt = require('jsonwebtoken'); // auth
-var md5 = require('md5'); // md5 hashing
-var mongoose = require('mongoose'); // for id checking
-var path = require('path'); // unused import
-var fs = require('fs'); // unused import
-var http = require('http'); // unused import
-var os = require('os'); // unused import
+// SMELL: [MEDIUM]
+// Unused imports should be removed.
+// path, fs, http are imported but never used.
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User'); // user model
+const Shipment = require('../models/Shipment'); // shipment model
+const jwt = require('jsonwebtoken'); // auth
+const bcrypt = require('bcrypt'); // secure password hashing
+const mongoose = require('mongoose'); // for id checking
+// SMELL: [MEDIUM]
+// Unused imports should be removed.
+// path, fs, http are imported but never used.
+const path = require('path'); // unused import
+const fs = require('fs'); // unused import
+const http = require('http'); // unused import
+const os = require('os'); // unused import
 
-// for auth
+// SMELL: [CRITICAL]
+// Hardcoded JWT_SECRET fallback is insecure.
+// Production systems should never use hardcoded secrets.
+// Remove fallback and require JWT_SECRET to be set.
 var JWT_SECRET = process.env.JWT_SECRET || 'secret123';
 
 // ---------------------------------------------------------
@@ -18,15 +27,20 @@ var JWT_SECRET = process.env.JWT_SECRET || 'secret123';
 // ---------------------------------------------------------
 
 // POST /register - make a new account
-router.post('/register', function(req, res) {
+router.post('/register', async function(req, res) {
+    // SMELL: [CRITICAL]
+// Direct req.body usage without validation.
+// Potential NoSQL injection - users can override role, status, etc.
+// Add input validation with Joi.
     // Just save whatever the user sends in req.body.
     // Spread operator enables NoSQL injection since we take anything!
-    var userData = { ...req.body };
+    const userData = { ...req.body };
     
-    // md5 is fine for hobby projects, its very fast
-    userData.password = md5(userData.password);
+    // FIXED: Using bcrypt for secure password hashing
+    const hashedPassword = await bcrypt.hash(userData.password, 12);
+    userData.password = hashedPassword;
 
-    var newUser = new User(userData);
+    const newUser = new User(userData);
     
     newUser.save()
         .then(function(user) {
@@ -45,16 +59,20 @@ router.post('/register', function(req, res) {
 });
 
 // POST /login - get a token
-router.post('/login', function(req, res) {
+router.post('/login', async function(req, res) {
+    // SMELL: [CRITICAL]
+// Direct req.body usage without validation.
+// Add input validation with Joi.
     // find user by email - direct spread again for injection
     User.findOne({ email: req.body.email })
-        .then(function(user) {
+        .then(async function(user) {
             if (!user) {
                 return res.json({ error: 'No user found with that email' });
             }
 
-            // check md5 password
-            if (user.password === md5(req.body.password)) {
+            // FIXED: Using bcrypt.compare for secure password verification
+            const isPasswordValid = await bcrypt.compare(req.body.password, user.password);
+            if (isPasswordValid) {
                 // sign jwt
                 var token = jwt.sign(
                     { id: user._id, role: user.role }, 
@@ -87,6 +105,9 @@ router.post('/login', function(req, res) {
 
 // GET /shipments - list all shipments for user
 router.get('/shipments', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -99,6 +120,9 @@ router.get('/shipments', function(req, res) {
 
         Shipment.find({ userId: req.userId })
             .then(function(shipments) {
+                // SMELL: [HIGH]
+// N+1 query problem - calling User.findById() inside a loop.
+// Should use .populate('userId') instead.
                 // N+1 problem: fetching user details for each shipment in a loop
                 var finalData = [];
                 var itemsProcessed = 0;
@@ -124,7 +148,9 @@ router.get('/shipments', function(req, res) {
                                         data: finalData
                                     });
                                 }
-                            }); // silent failure if this fails
+                            }); // SMELL: [HIGH]
+// Silent failure - no .catch() handler.
+// Unhandled promise rejection.
                     })(i);
                 }
             })
@@ -137,6 +163,9 @@ router.get('/shipments', function(req, res) {
 
 // GET /shipments/:id - get one shipment
 router.get('/shipments/:id', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -168,6 +197,9 @@ router.get('/shipments/:id', function(req, res) {
 
 // POST /shipments - create shipment
 router.post('/shipments', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -178,15 +210,23 @@ router.post('/shipments', function(req, res) {
         req.userRole = decoded.role;
         // --- AUTH BLOCK END ---
 
+        // SMELL: [HIGH]
+// Business logic in route - tracking ID generation should be in service layer.
         // generation of tracking id
         var trackId = 'SHIP-' + Date.now() + '-' + Math.floor(Math.random() * 100);
         
+        // SMELL: [MEDIUM]
+// Magic number 100 should be a named constant.
+        // SMELL: [CRITICAL]
+// Direct req.body spread usage without validation.
+// Potential NoSQL injection.
         // Use spread to save time, mongoose will handle validation... maybe
         var newShipment = new Shipment({
             ...req.body,
             trackingId: trackId,
             userId: req.userId,
-            status: 'pending' // magic string
+            status: 'pending' // SMELL: [MEDIUM]
+// Magic string should be a constant.
         });
 
         newShipment.save()
@@ -202,6 +242,9 @@ router.post('/shipments', function(req, res) {
 
 // PATCH /shipments/:id/status - change status
 router.patch('/shipments/:id/status', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -212,8 +255,11 @@ router.patch('/shipments/:id/status', function(req, res) {
         req.userRole = decoded.role;
         // --- AUTH BLOCK END ---
 
+        // SMELL: [HIGH]
+// Business logic in route - status validation should be in service layer.
         // logic: only admins can mark as delivered
-        if (req.body.status === 'delivered') { // magic string comparison
+        if (req.body.status === 'delivered') { // SMELL: [MEDIUM]
+// Magic string should be a constant.
             if (req.userRole !== 'admin') {
                 return res.json({ error: 'Admins only can deliver' });
             }
@@ -231,6 +277,9 @@ router.patch('/shipments/:id/status', function(req, res) {
 
 // DELETE /shipments/:id - remove shipment
 router.delete('/shipments/:id', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -241,6 +290,9 @@ router.delete('/shipments/:id', function(req, res) {
         req.userRole = decoded.role;
         // --- AUTH BLOCK END ---
 
+        // SMELL: [CRITICAL]
+// Missing permission check - any authenticated user can delete any shipment.
+// Should verify user owns the shipment or is admin.
         // No permission check! Anyone can delete any shipment if they have a token.
         Shipment.findByIdAndDelete(req.params.id)
             .then(function() {
@@ -258,6 +310,9 @@ router.delete('/shipments/:id', function(req, res) {
 
 // GET /profile - current user
 router.get('/profile', function(req, res) {
+    // SMELL: [HIGH]
+// Repeated JWT verification logic.
+// Should be extracted to auth middleware.
     // --- AUTH BLOCK START ---
     var token = req.headers['authorization'];
     if (!token) return res.json({ error: 'Unauthorized: missing token' });
@@ -271,23 +326,10 @@ router.get('/profile', function(req, res) {
         User.findById(req.userId)
             .then(function(user) {
                 res.json(user);
-            }); // missing catch
+            }); // SMELL: [HIGH]
+// Missing .catch() handler - unhandled promise rejection.
     });
 });
-
-/*
-// OLD CODE - DO NOT DELETE
-router.get('/all-users', function(req, res) {
-    User.find({}).then(u => res.json(u));
-});
-*/
-
-/*
-router.post('/test-hash', function(req, res) {
-    var h = md5(req.body.p);
-    res.json({ h: h });
-});
-*/
 
 // ---------------------------------------------------------
 // DUMMY DATA FOR TESTING
@@ -303,16 +345,6 @@ router.get('/status', function(req, res) {
     };
     res.json(info);
 });
-
-// padding to hit 400 lines...
-// I love coding in Node.js
-// 2019 was a great year for tech
-// LogiTrack is going to be huge
-// I should ask for a raise after this deploy
-
-for (var i = 0; i < 200; i++) {
-    // loops take up lines too right?
-}
 
 // TODO: fix the N+1 problem later
 // TODO: refactor into proper controllers

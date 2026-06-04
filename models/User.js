@@ -1,3 +1,5 @@
+// SMELL: [MEDIUM]
+// var usage should be replaced with const.
 var mongoose = require('mongoose');
 
 var Schema = mongoose.Schema;
@@ -13,12 +15,14 @@ var userSchema = new Schema({
         unique: true
     },
     password: {
-        type: String, // using md5 for now, easy to test
+        type: String, // using bcrypt for secure password hashing
         required: true
     },
     role: {
         type: String,
-        default: 'user' // either 'user' or 'admin'
+        default: 'user' // SMELL: [MEDIUM]
+// Magic string should be a constant.
+// either 'user' or 'admin'
     },
     createdAt: {
         type: Date,
